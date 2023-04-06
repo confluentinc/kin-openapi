@@ -56,7 +56,7 @@ func (h *ValidationHandler) Load() error {
 	return nil
 }
 
-//func (h *ValidationHandler) LoadSwagger() error {
+// func (h *ValidationHandler) LoadSwagger() error {
 //	swagger, err := openapi3.NewSwaggerLoader().LoadSwaggerFromFile(h.SwaggerFile)
 //	if err != nil {
 //		return err
@@ -69,7 +69,7 @@ func (h *ValidationHandler) Load() error {
 //		}
 //	}
 //	return h.router.AddSwagger(swagger)
-//}
+// }
 
 func (h *ValidationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if handled := h.before(w, r); handled {
