@@ -1,9 +1,10 @@
-package openapi3
+package openapi3_test
 
 import (
 	"encoding/json"
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,7 +15,7 @@ func TestExampleJSON(t *testing.T) {
 	require.NotEmpty(t, data)
 
 	t.Log("Unmarshal *openapi3.Example from JSON")
-	docA := &Example{}
+	docA := &openapi3.Example{}
 	err = json.Unmarshal(exampleJSON, &docA)
 	require.NoError(t, err)
 	require.NotEmpty(t, data)
@@ -39,7 +40,7 @@ var exampleJSON = []byte(`
 }
 `)
 
-func example() *Example {
+func example() *openapi3.Example {
 	value := map[string]string{
 		"name":    "Fluffy",
 		"petType": "Cat",
@@ -47,7 +48,7 @@ func example() *Example {
 		"gender":  "male",
 		"breed":   "Persian",
 	}
-	return &Example{
+	return &openapi3.Example{
 		Summary: "An example of a cat",
 		Value:   value,
 	}

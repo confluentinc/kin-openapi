@@ -1,4 +1,4 @@
-package openapi3filter
+package openapi3filter_test
 
 import (
 	"bytes"
@@ -14,10 +14,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/getkin/kin-openapi/openapi3"
-	legacyrouter "github.com/getkin/kin-openapi/routers/legacy"
+	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/stretchr/testify/require"
 )
 
 type ExampleRequest struct {
@@ -46,7 +45,7 @@ func TestFilter(t *testing.T) {
 	complexArgSchema.Required = []string{"name", "id"}
 
 	// Declare router
-	doc := &openapi3.T{
+	swagger := &openapi3.Swagger{
 		OpenAPI: "3.0.0",
 		Info: &openapi3.Info{
 			Title:   "MyAPI",
@@ -63,10 +62,9 @@ func TestFilter(t *testing.T) {
 					Parameters: openapi3.Parameters{
 						{
 							Value: &openapi3.Parameter{
-								In:       "path",
-								Name:     "pathArg",
-								Schema:   openapi3.NewStringSchema().WithMaxLength(2).NewRef(),
-								Required: true,
+								In:     "path",
+								Name:   "pathArg",
+								Schema: openapi3.NewStringSchema().WithMaxLength(2).NewRef(),
 							},
 						},
 						{
@@ -106,7 +104,7 @@ func TestFilter(t *testing.T) {
 								).NewRef(),
 							},
 						},
-						// TODO(decode not): handle decoding "not" Schema
+						// TODO(decode not): handle decoding "not" JSON Schema
 						// {
 						// 	Value: &openapi3.Parameter{
 						// 		In:   "query",
@@ -135,13 +133,13 @@ func TestFilter(t *testing.T) {
 							},
 						},
 					},
-					Responses: openapi3.NewResponses(),
+					Responses: make(openapi3.Responses),
 				},
 			},
 
 			"/issue151": &openapi3.PathItem{
 				Get: &openapi3.Operation{
-					Responses: openapi3.NewResponses(),
+					Responses: make(openapi3.Responses),
 				},
 				Parameters: openapi3.Parameters{
 					{
@@ -157,36 +155,32 @@ func TestFilter(t *testing.T) {
 		},
 	}
 
-	err := doc.Validate(context.Background())
-	require.NoError(t, err)
-	router, err := legacyrouter.NewRouter(doc)
-	require.NoError(t, err)
-	expectWithDecoder := func(req ExampleRequest, resp ExampleResponse, decoder ContentParameterDecoder) error {
+	router := openapi3filter.NewRouter().WithSwagger(swagger)
+	expectWithDecoder := func(req ExampleRequest, resp ExampleResponse, decoder openapi3filter.ContentParameterDecoder) error {
 		t.Logf("Request: %s %s", req.Method, req.URL)
-		httpReq, err := http.NewRequest(req.Method, req.URL, marshalReader(req.Body))
-		require.NoError(t, err)
-		httpReq.Header.Set(headerCT, req.ContentType)
+		httpReq, _ := http.NewRequest(req.Method, req.URL, marshalReader(req.Body))
+		httpReq.Header.Set("Content-Type", req.ContentType)
 
 		// Find route
-		route, pathParams, err := router.FindRoute(httpReq)
+		route, pathParams, err := router.FindRoute(httpReq.Method, httpReq.URL)
 		require.NoError(t, err)
 
 		// Validate request
-		requestValidationInput := &RequestValidationInput{
+		requestValidationInput := &openapi3filter.RequestValidationInput{
 			Request:      httpReq,
 			PathParams:   pathParams,
 			Route:        route,
 			ParamDecoder: decoder,
 		}
-		if err := ValidateRequest(context.Background(), requestValidationInput); err != nil {
+		if err := openapi3filter.ValidateRequest(context.TODO(), requestValidationInput); err != nil {
 			return err
 		}
 		t.Logf("Response: %d", resp.Status)
-		responseValidationInput := &ResponseValidationInput{
+		responseValidationInput := &openapi3filter.ResponseValidationInput{
 			RequestValidationInput: requestValidationInput,
 			Status:                 resp.Status,
 			Header: http.Header{
-				headerCT: []string{
+				"Content-Type": []string{
 					resp.ContentType,
 				},
 			},
@@ -196,23 +190,27 @@ func TestFilter(t *testing.T) {
 			require.NoError(t, err)
 			responseValidationInput.SetBodyBytes(data)
 		}
-		err = ValidateResponse(context.Background(), responseValidationInput)
+		err = openapi3filter.ValidateResponse(context.TODO(), responseValidationInput)
 		require.NoError(t, err)
-		return nil
+		return err
 	}
 	expect := func(req ExampleRequest, resp ExampleResponse) error {
 		return expectWithDecoder(req, resp, nil)
 	}
 
-	resp := ExampleResponse{
+	var err error
+	var req ExampleRequest
+	var resp ExampleResponse
+	resp = ExampleResponse{
 		Status: 200,
 	}
-
 	// Test paths
-	req := ExampleRequest{
+
+	req = ExampleRequest{
 		Method: "POST",
 		URL:    "http://example.com/api/prefix/v/suffix",
 	}
+
 	err = expect(req, resp)
 	require.NoError(t, err)
 
@@ -222,7 +220,7 @@ func TestFilter(t *testing.T) {
 		URL:    "http://example.com/api/prefix/EXCEEDS_MAX_LENGTH/suffix",
 	}
 	err = expect(req, resp)
-	require.IsType(t, &RequestError{}, err)
+	require.IsType(t, &openapi3filter.RequestError{}, err)
 
 	// Test query parameter openapi3filter
 	req = ExampleRequest{
@@ -237,14 +235,14 @@ func TestFilter(t *testing.T) {
 		URL:    "http://example.com/api/prefix/v/suffix?queryArg=EXCEEDS_MAX_LENGTH",
 	}
 	err = expect(req, resp)
-	require.IsType(t, &RequestError{}, err)
+	require.IsType(t, &openapi3filter.RequestError{}, err)
 
 	req = ExampleRequest{
 		Method: "GET",
 		URL:    "http://example.com/api/issue151?par2=par1_is_missing",
 	}
 	err = expect(req, resp)
-	require.IsType(t, &RequestError{}, err)
+	require.IsType(t, &openapi3filter.RequestError{}, err)
 
 	// Test query parameter openapi3filter
 	req = ExampleRequest{
@@ -266,51 +264,51 @@ func TestFilter(t *testing.T) {
 		URL:    "http://example.com/api/prefix/v/suffix?queryArgAnyOf=123",
 	}
 	err = expect(req, resp)
-	require.IsType(t, &RequestError{}, err)
+	require.IsType(t, &openapi3filter.RequestError{}, err)
 
 	req = ExampleRequest{
 		Method: "POST",
 		URL:    "http://example.com/api/prefix/v/suffix?queryArgOneOf=567",
 	}
 	err = expect(req, resp)
-	require.IsType(t, &RequestError{}, err)
+	require.IsType(t, &openapi3filter.RequestError{}, err)
 
 	req = ExampleRequest{
 		Method: "POST",
 		URL:    "http://example.com/api/prefix/v/suffix?queryArgOneOf=2017-12-31T11:59:59",
 	}
 	err = expect(req, resp)
-	require.IsType(t, &RequestError{}, err)
+	require.IsType(t, &openapi3filter.RequestError{}, err)
 
 	req = ExampleRequest{
 		Method: "POST",
 		URL:    "http://example.com/api/prefix/v/suffix?queryArgAllOf=abdfg",
 	}
 	err = expect(req, resp)
-	require.IsType(t, &RequestError{}, err)
+	require.IsType(t, &openapi3filter.RequestError{}, err)
 
-	// TODO(decode not): handle decoding "not" Schema
+	// TODO(decode not): handle decoding "not" JSON Schema
 	// req = ExampleRequest{
 	// 	Method: "POST",
 	// 	URL:    "http://example.com/api/prefix/v/suffix?queryArgNot=abdfg",
 	// }
 	// err = expect(req, resp)
-	// require.IsType(t, &RequestError{}, err)
+	// require.IsType(t, &openapi3filter.RequestError{}, err)
 
-	// TODO(decode not): handle decoding "not" Schema
+	// TODO(decode not): handle decoding "not" JSON Schema
 	// req = ExampleRequest{
 	// 	Method: "POST",
 	// 	URL:    "http://example.com/api/prefix/v/suffix?queryArgNot=123",
 	// }
 	// err = expect(req, resp)
-	// require.IsType(t, &RequestError{}, err)
+	// require.IsType(t, &openapi3filter.RequestError{}, err)
 
 	req = ExampleRequest{
 		Method: "POST",
 		URL:    "http://example.com/api/prefix/v/suffix?queryArg=EXCEEDS_MAX_LENGTH",
 	}
 	err = expect(req, resp)
-	require.IsType(t, &RequestError{}, err)
+	require.IsType(t, &openapi3filter.RequestError{}, err)
 
 	req = ExampleRequest{
 		Method: "POST",
@@ -320,14 +318,14 @@ func TestFilter(t *testing.T) {
 		Status: 200,
 	}
 	err = expect(req, resp)
-	// require.IsType(t, &ResponseError{}, err)
+	// require.IsType(t, &openapi3filter.ResponseError{}, err)
 	require.NoError(t, err)
 
 	// Check that content validation works. This should pass, as ID is short
 	// enough.
 	req = ExampleRequest{
 		Method: "POST",
-		URL:    `http://example.com/api/prefix/v/suffix?contentArg={"name":"bob", "id":"a"}`,
+		URL:    "http://example.com/api/prefix/v/suffix?contentArg={\"name\":\"bob\", \"id\":\"a\"}",
 	}
 	err = expect(req, resp)
 	require.NoError(t, err)
@@ -335,10 +333,10 @@ func TestFilter(t *testing.T) {
 	// Now it should fail due the ID being too long
 	req = ExampleRequest{
 		Method: "POST",
-		URL:    `http://example.com/api/prefix/v/suffix?contentArg={"name":"bob", "id":"EXCEEDS_MAX_LENGTH"}`,
+		URL:    "http://example.com/api/prefix/v/suffix?contentArg={\"name\":\"bob\", \"id\":\"EXCEEDS_MAX_LENGTH\"}",
 	}
 	err = expect(req, resp)
-	require.IsType(t, &RequestError{}, err)
+	require.IsType(t, &openapi3filter.RequestError{}, err)
 
 	// Now, repeat the above two test cases using a custom parameter decoder.
 	customDecoder := func(param *openapi3.Parameter, values []string) (interface{}, *openapi3.Schema, error) {
@@ -350,7 +348,7 @@ func TestFilter(t *testing.T) {
 
 	req = ExampleRequest{
 		Method: "POST",
-		URL:    `http://example.com/api/prefix/v/suffix?contentArg2={"name":"bob", "id":"a"}`,
+		URL:    "http://example.com/api/prefix/v/suffix?contentArg2={\"name\":\"bob\", \"id\":\"a\"}",
 	}
 	err = expectWithDecoder(req, resp, customDecoder)
 	require.NoError(t, err)
@@ -358,10 +356,10 @@ func TestFilter(t *testing.T) {
 	// Now it should fail due the ID being too long
 	req = ExampleRequest{
 		Method: "POST",
-		URL:    `http://example.com/api/prefix/v/suffix?contentArg2={"name":"bob", "id":"EXCEEDS_MAX_LENGTH"}`,
+		URL:    "http://example.com/api/prefix/v/suffix?contentArg2={\"name\":\"bob\", \"id\":\"EXCEEDS_MAX_LENGTH\"}",
 	}
 	err = expectWithDecoder(req, resp, customDecoder)
-	require.IsType(t, &RequestError{}, err)
+	require.IsType(t, &openapi3filter.RequestError{}, err)
 }
 
 func marshalReader(value interface{}) io.ReadCloser {
@@ -405,7 +403,7 @@ func TestValidateRequestBody(t *testing.T) {
 		{
 			name:    "required empty",
 			body:    requiredReqBody,
-			wantErr: &RequestError{RequestBody: requiredReqBody, Err: ErrInvalidRequired},
+			wantErr: &openapi3filter.RequestError{RequestBody: requiredReqBody, Err: openapi3filter.ErrInvalidRequired},
 		},
 		{
 			name: "required not empty",
@@ -436,10 +434,10 @@ func TestValidateRequestBody(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/test", tc.data)
 			if tc.mime != "" {
-				req.Header.Set(headerCT, tc.mime)
+				req.Header.Set(http.CanonicalHeaderKey("Content-Type"), tc.mime)
 			}
-			inp := &RequestValidationInput{Request: req}
-			err := ValidateRequestBody(context.Background(), inp, tc.body)
+			inp := &openapi3filter.RequestValidationInput{Request: req}
+			err := openapi3filter.ValidateRequestBody(context.Background(), inp, tc.body)
 
 			if tc.wantErr == nil {
 				require.NoError(t, err)
@@ -455,11 +453,11 @@ func matchReqBodyError(want, got error) bool {
 	if want == got {
 		return true
 	}
-	wErr, ok := want.(*RequestError)
+	wErr, ok := want.(*openapi3filter.RequestError)
 	if !ok {
 		return false
 	}
-	gErr, ok := got.(*RequestError)
+	gErr, ok := got.(*openapi3filter.RequestError)
 	if !ok {
 		return false
 	}
@@ -480,7 +478,8 @@ func toJSON(v interface{}) io.Reader {
 	return bytes.NewReader(data)
 }
 
-func TestRootSecurityRequirementsAreUsedIfNotProvidedAtTheOperationLevel(t *testing.T) {
+// TestOperationOrSwaggerSecurity asserts that the swagger's SecurityRequirements are used if no SecurityRequirements are provided for an operation.
+func TestOperationOrSwaggerSecurity(t *testing.T) {
 	// Create the security schemes
 	securitySchemes := []ExampleSecurityScheme{
 		{
@@ -529,7 +528,8 @@ func TestRootSecurityRequirementsAreUsedIfNotProvidedAtTheOperationLevel(t *test
 		},
 	}
 
-	doc := &openapi3.T{
+	// Create the swagger
+	swagger := &openapi3.Swagger{
 		OpenAPI: "3.0.0",
 		Info: &openapi3.Info{
 			Title:   "MyAPI",
@@ -541,40 +541,43 @@ func TestRootSecurityRequirementsAreUsedIfNotProvidedAtTheOperationLevel(t *test
 				securitySchemes[1].Name: {},
 			},
 		},
-		Components: &openapi3.Components{
+		Components: openapi3.Components{
 			SecuritySchemes: map[string]*openapi3.SecuritySchemeRef{},
 		},
 	}
 
 	// Add the security schemes to the components
 	for _, scheme := range securitySchemes {
-		doc.Components.SecuritySchemes[scheme.Name] = &openapi3.SecuritySchemeRef{
+		swagger.Components.SecuritySchemes[scheme.Name] = &openapi3.SecuritySchemeRef{
 			Value: scheme.Scheme,
 		}
 	}
 
-	// Add the paths from the test cases to the spec's paths
+	// Add the paths from the test cases to the swagger's paths
 	for _, tc := range tc {
 		var securityRequirements *openapi3.SecurityRequirements = nil
 		if tc.schemes != nil {
-			tempS := openapi3.NewSecurityRequirements()
+			tempS := make(openapi3.SecurityRequirements, 0)
 			for _, scheme := range *tc.schemes {
-				tempS.With(openapi3.SecurityRequirement{scheme.Name: {}})
+				tempS = append(
+					tempS,
+					openapi3.SecurityRequirement{
+						scheme.Name: {},
+					},
+				)
 			}
-			securityRequirements = tempS
+			securityRequirements = &tempS
 		}
-		doc.Paths[tc.name] = &openapi3.PathItem{
+		swagger.Paths[tc.name] = &openapi3.PathItem{
 			Get: &openapi3.Operation{
 				Security:  securityRequirements,
-				Responses: openapi3.NewResponses(),
+				Responses: make(openapi3.Responses),
 			},
 		}
 	}
 
-	err := doc.Validate(context.Background())
-	require.NoError(t, err)
-	router, err := legacyrouter.NewRouter(doc)
-	require.NoError(t, err)
+	// Declare the router
+	router := openapi3filter.NewRouter().WithSwagger(swagger)
 
 	// Test each case
 	for _, path := range tc {
@@ -590,14 +593,15 @@ func TestRootSecurityRequirementsAreUsedIfNotProvidedAtTheOperationLevel(t *test
 
 		// Create the request
 		emptyBody := bytes.NewReader(make([]byte, 0))
-		httpReq := httptest.NewRequest(http.MethodGet, path.name, emptyBody)
-		route, _, err := router.FindRoute(httpReq)
+		pathURL, err := url.Parse(path.name)
 		require.NoError(t, err)
-		req := RequestValidationInput{
-			Request: httpReq,
+		route, _, err := router.FindRoute(http.MethodGet, pathURL)
+		require.NoError(t, err)
+		req := openapi3filter.RequestValidationInput{
+			Request: httptest.NewRequest(http.MethodGet, path.name, emptyBody),
 			Route:   route,
-			Options: &Options{
-				AuthenticationFunc: func(ctx context.Context, input *AuthenticationInput) error {
+			Options: &openapi3filter.Options{
+				AuthenticationFunc: func(c context.Context, input *openapi3filter.AuthenticationInput) error {
 					if schemesValidated != nil {
 						if validated, ok := (*schemesValidated)[input.SecurityScheme]; ok {
 							if validated {
@@ -618,7 +622,7 @@ func TestRootSecurityRequirementsAreUsedIfNotProvidedAtTheOperationLevel(t *test
 		}
 
 		// Validate the request
-		err = ValidateRequest(context.Background(), &req)
+		err = openapi3filter.ValidateRequest(context.TODO(), &req)
 		require.NoError(t, err)
 
 		for securityRequirement, validated := range *schemesValidated {
@@ -663,21 +667,22 @@ func TestAnySecurityRequirementMet(t *testing.T) {
 		},
 	}
 
-	doc := openapi3.T{
+	// Create the swagger
+	swagger := openapi3.Swagger{
 		OpenAPI: "3.0.0",
 		Info: &openapi3.Info{
 			Title:   "MyAPI",
 			Version: "0.1",
 		},
 		Paths: map[string]*openapi3.PathItem{},
-		Components: &openapi3.Components{
+		Components: openapi3.Components{
 			SecuritySchemes: map[string]*openapi3.SecuritySchemeRef{},
 		},
 	}
 
-	// Add the security schemes to the spec's components
+	// Add the security schemes to the swagger's components
 	for schemeName := range schemes {
-		doc.Components.SecuritySchemes[schemeName] = &openapi3.SecuritySchemeRef{
+		swagger.Components.SecuritySchemes[schemeName] = &openapi3.SecuritySchemeRef{
 			Value: &openapi3.SecurityScheme{
 				Type:   "http",
 				Scheme: "basic",
@@ -685,27 +690,27 @@ func TestAnySecurityRequirementMet(t *testing.T) {
 		}
 	}
 
-	// Add the paths to the spec
+	// Add the paths to the swagger
 	for _, tc := range tc {
 		// Create the security requirements from the test cases's schemes
-		securityRequirements := openapi3.NewSecurityRequirements()
-		for _, scheme := range tc.schemes {
-			securityRequirements.With(openapi3.SecurityRequirement{scheme: {}})
+		securityRequirements := make(openapi3.SecurityRequirements, len(tc.schemes))
+		for i, scheme := range tc.schemes {
+			securityRequirements[i] = openapi3.SecurityRequirement{
+				scheme: {},
+			}
 		}
 
 		// Create the path with the security requirements
-		doc.Paths[tc.name] = &openapi3.PathItem{
+		swagger.Paths[tc.name] = &openapi3.PathItem{
 			Get: &openapi3.Operation{
-				Security:  securityRequirements,
-				Responses: openapi3.NewResponses(),
+				Security:  &securityRequirements,
+				Responses: make(openapi3.Responses),
 			},
 		}
 	}
 
-	err := doc.Validate(context.Background())
-	require.NoError(t, err)
-	router, err := legacyrouter.NewRouter(&doc)
-	require.NoError(t, err)
+	// Create the router
+	router := openapi3filter.NewRouter().WithSwagger(&swagger)
 
 	// Create the authentication function
 	authFunc := makeAuthFunc(schemes)
@@ -714,18 +719,17 @@ func TestAnySecurityRequirementMet(t *testing.T) {
 		// Create the request input for the path
 		tcURL, err := url.Parse(tc.name)
 		require.NoError(t, err)
-		httpReq := httptest.NewRequest(http.MethodGet, tcURL.String(), nil)
-		route, _, err := router.FindRoute(httpReq)
+		route, _, err := router.FindRoute(http.MethodGet, tcURL)
 		require.NoError(t, err)
-		req := RequestValidationInput{
+		req := openapi3filter.RequestValidationInput{
 			Route: route,
-			Options: &Options{
+			Options: &openapi3filter.Options{
 				AuthenticationFunc: authFunc,
 			},
 		}
 
 		// Validate the security requirements
-		err = ValidateSecurityRequirements(context.Background(), &req, *route.Operation.Security)
+		err = openapi3filter.ValidateSecurityRequirements(context.TODO(), &req, *route.Operation.Security)
 
 		// If there should have been an error
 		if tc.error {
@@ -760,21 +764,22 @@ func TestAllSchemesMet(t *testing.T) {
 		},
 	}
 
-	doc := openapi3.T{
+	// Create the swagger
+	swagger := openapi3.Swagger{
 		OpenAPI: "3.0.0",
 		Info: &openapi3.Info{
 			Title:   "MyAPI",
 			Version: "0.1",
 		},
 		Paths: map[string]*openapi3.PathItem{},
-		Components: &openapi3.Components{
+		Components: openapi3.Components{
 			SecuritySchemes: map[string]*openapi3.SecuritySchemeRef{},
 		},
 	}
 
-	// Add the security schemes to the spec's components
+	// Add the security schemes to the swagger's components
 	for schemeName := range schemes {
-		doc.Components.SecuritySchemes[schemeName] = &openapi3.SecuritySchemeRef{
+		swagger.Components.SecuritySchemes[schemeName] = &openapi3.SecuritySchemeRef{
 			Value: &openapi3.SecurityScheme{
 				Type:   "http",
 				Scheme: "basic",
@@ -782,7 +787,7 @@ func TestAllSchemesMet(t *testing.T) {
 		}
 	}
 
-	// Add the paths to the spec
+	// Add the paths to the swagger
 	for _, tc := range tc {
 		// Create the security requirement for the path
 		securityRequirement := openapi3.SecurityRequirement{}
@@ -794,20 +799,18 @@ func TestAllSchemesMet(t *testing.T) {
 			}
 		}
 
-		doc.Paths[tc.name] = &openapi3.PathItem{
+		swagger.Paths[tc.name] = &openapi3.PathItem{
 			Get: &openapi3.Operation{
 				Security: &openapi3.SecurityRequirements{
 					securityRequirement,
 				},
-				Responses: openapi3.NewResponses(),
+				Responses: make(openapi3.Responses),
 			},
 		}
 	}
 
-	err := doc.Validate(context.Background())
-	require.NoError(t, err)
-	router, err := legacyrouter.NewRouter(&doc)
-	require.NoError(t, err)
+	// Create the router from the swagger
+	router := openapi3filter.NewRouter().WithSwagger(&swagger)
 
 	// Create the authentication function
 	authFunc := makeAuthFunc(schemes)
@@ -816,18 +819,17 @@ func TestAllSchemesMet(t *testing.T) {
 		// Create the request input for the path
 		tcURL, err := url.Parse(tc.name)
 		require.NoError(t, err)
-		httpReq := httptest.NewRequest(http.MethodGet, tcURL.String(), nil)
-		route, _, err := router.FindRoute(httpReq)
+		route, _, err := router.FindRoute(http.MethodGet, tcURL)
 		require.NoError(t, err)
-		req := RequestValidationInput{
+		req := openapi3filter.RequestValidationInput{
 			Route: route,
-			Options: &Options{
+			Options: &openapi3filter.Options{
 				AuthenticationFunc: authFunc,
 			},
 		}
 
 		// Validate the security requirements
-		err = ValidateSecurityRequirements(context.Background(), &req, *route.Operation.Security)
+		err = openapi3filter.ValidateSecurityRequirements(context.TODO(), &req, *route.Operation.Security)
 
 		// If there should have been an error
 		if tc.error {
@@ -841,8 +843,8 @@ func TestAllSchemesMet(t *testing.T) {
 // makeAuthFunc creates an authentication function that accepts the given valid schemes.
 // If an invalid or unknown scheme is encountered, an error is returned by the returned function.
 // Otherwise the return value of the returned function is nil.
-func makeAuthFunc(schemes map[string]bool) func(ctx context.Context, input *AuthenticationInput) error {
-	return func(ctx context.Context, input *AuthenticationInput) error {
+func makeAuthFunc(schemes map[string]bool) func(c context.Context, input *openapi3filter.AuthenticationInput) error {
+	return func(c context.Context, input *openapi3filter.AuthenticationInput) error {
 		// If the scheme is valid and present in the schemes
 		valid, present := schemes[input.SecuritySchemeName]
 		if valid && present {

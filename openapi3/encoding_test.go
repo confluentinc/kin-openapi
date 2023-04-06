@@ -1,4 +1,4 @@
-package openapi3
+package openapi3_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,13 +17,13 @@ func TestEncodingJSON(t *testing.T) {
 	require.NotEmpty(t, data)
 
 	t.Log("Unmarshal *openapi3.Encoding from JSON")
-	docA := &Encoding{}
+	docA := &openapi3.Encoding{}
 	err = json.Unmarshal(encodingJSON, &docA)
 	require.NoError(t, err)
 	require.NotEmpty(t, data)
 
 	t.Log("Validate *openapi3.Encoding")
-	err = docA.Validate(context.Background())
+	err = docA.Validate(context.TODO())
 	require.NoError(t, err)
 
 	t.Log("Ensure representations match")
@@ -44,13 +45,13 @@ var encodingJSON = []byte(`
 }
 `)
 
-func encoding() *Encoding {
+func encoding() *openapi3.Encoding {
 	explode := true
-	return &Encoding{
+	return &openapi3.Encoding{
 		ContentType: "application/json",
-		Headers: map[string]*HeaderRef{
+		Headers: map[string]*openapi3.HeaderRef{
 			"someHeader": {
-				Value: &Header{},
+				Value: &openapi3.Header{},
 			},
 		},
 		Style:         "form",
@@ -63,32 +64,32 @@ func TestEncodingSerializationMethod(t *testing.T) {
 	boolPtr := func(b bool) *bool { return &b }
 	testCases := []struct {
 		name string
-		enc  *Encoding
-		want *SerializationMethod
+		enc  *openapi3.Encoding
+		want *openapi3.SerializationMethod
 	}{
 		{
 			name: "default",
-			want: &SerializationMethod{Style: SerializationForm, Explode: true},
+			want: &openapi3.SerializationMethod{Style: openapi3.SerializationForm, Explode: true},
 		},
 		{
 			name: "encoding with style",
-			enc:  &Encoding{Style: SerializationSpaceDelimited},
-			want: &SerializationMethod{Style: SerializationSpaceDelimited, Explode: true},
+			enc:  &openapi3.Encoding{Style: openapi3.SerializationSpaceDelimited},
+			want: &openapi3.SerializationMethod{Style: openapi3.SerializationSpaceDelimited, Explode: true},
 		},
 		{
 			name: "encoding with explode",
-			enc:  &Encoding{Explode: boolPtr(true)},
-			want: &SerializationMethod{Style: SerializationForm, Explode: true},
+			enc:  &openapi3.Encoding{Explode: boolPtr(true)},
+			want: &openapi3.SerializationMethod{Style: openapi3.SerializationForm, Explode: true},
 		},
 		{
 			name: "encoding with no explode",
-			enc:  &Encoding{Explode: boolPtr(false)},
-			want: &SerializationMethod{Style: SerializationForm, Explode: false},
+			enc:  &openapi3.Encoding{Explode: boolPtr(false)},
+			want: &openapi3.SerializationMethod{Style: openapi3.SerializationForm, Explode: false},
 		},
 		{
 			name: "encoding with style and explode ",
-			enc:  &Encoding{Style: SerializationSpaceDelimited, Explode: boolPtr(false)},
-			want: &SerializationMethod{Style: SerializationSpaceDelimited, Explode: false},
+			enc:  &openapi3.Encoding{Style: openapi3.SerializationSpaceDelimited, Explode: boolPtr(false)},
+			want: &openapi3.SerializationMethod{Style: openapi3.SerializationSpaceDelimited, Explode: false},
 		},
 	}
 	for _, tc := range testCases {

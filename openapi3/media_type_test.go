@@ -1,10 +1,11 @@
-package openapi3
+package openapi3_test
 
 import (
 	"context"
 	"encoding/json"
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,13 +16,13 @@ func TestMediaTypeJSON(t *testing.T) {
 	require.NotEmpty(t, data)
 
 	t.Log("Unmarshal *openapi3.MediaType from JSON")
-	docA := &MediaType{}
+	docA := &openapi3.MediaType{}
 	err = json.Unmarshal(mediaTypeJSON, &docA)
 	require.NoError(t, err)
 	require.NotEmpty(t, data)
 
 	t.Log("Validate *openapi3.MediaType")
-	err = docA.Validate(context.Background())
+	err = docA.Validate(context.TODO())
 	require.NoError(t, err)
 
 	t.Log("Ensure representations match")
@@ -51,22 +52,22 @@ var mediaTypeJSON = []byte(`
 }
 `)
 
-func mediaType() *MediaType {
+func mediaType() *openapi3.MediaType {
 	example := map[string]string{"name": "Some example"}
-	return &MediaType{
-		Schema: &SchemaRef{
-			Value: &Schema{
+	return &openapi3.MediaType{
+		Schema: &openapi3.SchemaRef{
+			Value: &openapi3.Schema{
 				Description: "Some schema",
 			},
 		},
-		Encoding: map[string]*Encoding{
+		Encoding: map[string]*openapi3.Encoding{
 			"someEncoding": {
 				ContentType: "application/xml; charset=utf-8",
 			},
 		},
-		Examples: map[string]*ExampleRef{
+		Examples: map[string]*openapi3.ExampleRef{
 			"someExample": {
-				Value: NewExample(example),
+				Value: openapi3.NewExample(example),
 			},
 		},
 	}

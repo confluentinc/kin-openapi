@@ -5,10 +5,9 @@ import (
 	"net/url"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/getkin/kin-openapi/routers"
 )
 
-// A ContentParameterDecoder takes a parameter definition from the OpenAPI spec,
+// A ContentParameterDecoder takes a parameter definition from the swagger spec,
 // and the value which we received for it. It is expected to return the
 // value unmarshaled into an interface which can be traversed for
 // validation, it should also return the schema to be used for validating the
@@ -23,7 +22,7 @@ type RequestValidationInput struct {
 	Request      *http.Request
 	PathParams   map[string]string
 	QueryParams  url.Values
-	Route        *routers.Route
+	Route        *Route
 	Options      *Options
 	ParamDecoder ContentParameterDecoder
 }

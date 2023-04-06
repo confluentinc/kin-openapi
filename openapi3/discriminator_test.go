@@ -1,24 +1,15 @@
-package openapi3
+package openapi3_test
 
 import (
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/require"
 )
 
-func TestParsingDiscriminator(t *testing.T) {
-	const spec = `
+var jsonSpecWithDiscriminator = []byte(`
 {
 	"openapi": "3.0.0",
-	"info": {
-		"version": "1.0.0",
-		"title": "title",
-		"description": "desc",
-		"contact": {
-			"email": "email"
-		}
-	},
-	"paths": {},
 	"components": {
 		"schemas": {
 			"MyResponseType": {
@@ -43,14 +34,10 @@ func TestParsingDiscriminator(t *testing.T) {
 		}
 	}
 }
-`
+`)
 
-	loader := NewLoader()
-	doc, err := loader.LoadFromData([]byte(spec))
+func TestParsingDiscriminator(t *testing.T) {
+	loader, err := openapi3.NewSwaggerLoader().LoadSwaggerFromData(jsonSpecWithDiscriminator)
 	require.NoError(t, err)
-
-	err = doc.Validate(loader.Context)
-	require.NoError(t, err)
-
-	require.Equal(t, 2, len(doc.Components.Schemas["MyResponseType"].Value.Discriminator.Mapping))
+	require.Equal(t, 2, len(loader.Components.Schemas["MyResponseType"].Value.OneOf))
 }
