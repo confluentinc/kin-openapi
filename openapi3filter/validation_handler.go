@@ -2,7 +2,9 @@ package openapi3filter
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/routers"
@@ -54,6 +56,21 @@ func (h *ValidationHandler) Load() error {
 	return nil
 }
 
+// func (h *ValidationHandler) LoadSwagger() error {
+//	swagger, err := openapi3.NewSwaggerLoader().LoadSwaggerFromFile(h.SwaggerFile)
+//	if err != nil {
+//		return err
+//	}
+//	if h.IgnoreServerErrors {
+//		// remove servers from the OpenAPI spec if we shouldn't validate them
+//		swagger, err = h.removeServers(swagger)
+//		if err != nil {
+//			return err
+//		}
+//	}
+//	return h.router.AddSwagger(swagger)
+// }
+
 func (h *ValidationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if handled := h.before(w, r); handled {
 		return
@@ -104,4 +121,39 @@ func (h *ValidationHandler) validateRequest(r *http.Request) error {
 	}
 
 	return nil
+}
+
+// removeServers remove servers from the OpenAPI spec if we shouldn't validate them.
+//
+// It also rewrites all the paths to begin with the server path, so that the paths still work.
+// This assumes that all servers share the same path (e.g., all have /v1), or return an error.
+func (h *ValidationHandler) removeServers(swagger *openapi3.T) (*openapi3.T, error) {
+	// collect API pathPrefix path prefixes
+	prefixes := make(map[string]struct{}, 0) // a "set"
+	for _, s := range swagger.Servers {
+		u, err := url.Parse(s.URL)
+		if err != nil {
+			return nil, err
+		}
+		prefixes[u.Path] = struct{}{}
+	}
+	if len(prefixes) != 1 {
+		return nil, fmt.Errorf("requires a single API pathPrefix path prefix: %v", prefixes)
+	}
+	var prefix string
+	for k := range prefixes {
+		prefix = k
+	}
+
+	// update the paths to start with the API pathPrefix path prefixes
+	paths := make(openapi3.Paths, 0)
+	for key, path := range swagger.Paths {
+		paths[prefix+key] = path
+	}
+	swagger.Paths = paths
+
+	// now remove the servers
+	swagger.Servers = nil
+
+	return swagger, nil
 }

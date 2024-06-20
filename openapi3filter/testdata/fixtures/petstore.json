@@ -121,7 +121,11 @@
         ],
         "summary": "Add a new pet to the store",
         "description": "",
+<<<<<<< HEAD:openapi3filter/fixtures/petstore.json
+        "operationId": "addPet",
+=======
         "operationId": "addPet2",
+>>>>>>> upstream/master:openapi3filter/testdata/fixtures/petstore.json
         "responses": {
           "405": {
             "description": "Invalid input"
@@ -192,6 +196,8 @@
                       {"$ref": "#/components/schemas/Pet"},
                       {"$ref": "#/components/schemas/PetRequiredProperties"}
                     ]
+<<<<<<< HEAD:openapi3filter/fixtures/petstore.json
+=======
                   }
                 }
               }
@@ -297,6 +303,7 @@
                       {"$ref": "#/components/schemas/Pet"},
                       {"$ref": "#/components/schemas/PetRequiredProperties"}
                     ]
+>>>>>>> upstream/master:openapi3filter/testdata/fixtures/petstore.json
                   }
                 }
               }
@@ -1255,7 +1262,11 @@
           },
           "name": {
             "type": "string",
+<<<<<<< HEAD:openapi3filter/fixtures/petstore.json
+            "example": "doggie",
+=======
             "example": "doggie"
+>>>>>>> upstream/master:openapi3filter/testdata/fixtures/petstore.json
           },
           "photoUrls": {
             "type": "array",
@@ -1315,7 +1326,7 @@
           },
           "name": {
             "type": "string",
-            "example": "doggie"
+            "example": "doggie",
           },
           "photoUrls": {
             "type": "array",
